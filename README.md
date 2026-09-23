@@ -18,6 +18,25 @@ The Zenodo data are computed spectra for 177,461 molecules, not measured ATR
 or transmission spectra. The service keeps the original provenance and marks
 every result as `computed`.
 
+## Chemical metadata limitation
+
+The supplied IR Parquet schema contains a numerical `id`, a `smiles` string,
+the frequency axis and the computed IR curve. It does **not** include common
+names, IUPAC names, CAS numbers or formulae. The service therefore returns the
+original id and SMILES without inventing a compound name.
+
+To identify a returned hypothesis, render or copy its SMILES and search it in
+PubChem, then independently check whether the resulting substance and
+measurement conditions are chemically plausible. An optional local
+SMILES → name cache is metadata enrichment only; it is not part of the
+spectral similarity calculation.
+
+The service now includes that optional cache through PubChem PUG REST: it
+retrieves `Title`, IUPAC name, formula, CID and InChIKey only when requested.
+The result is cached in `pubchem-cache.sqlite3` inside `REFERENCE_DATA_DIR`.
+It never changes the ranking or turns a computed-spectrum hypothesis into an
+identification.
+
 ## First start
 
 1. Copy `.env.example` to `.env`.
@@ -119,6 +138,8 @@ curl -X POST http://127.0.0.1:8088/api/v1/search \
 Endpoints:
 
 - `POST /api/v1/search` — top-K normalised spectral-shape matches;
+- `POST /api/v1/metadata/resolve` — cached PubChem name/formula lookup for a
+  returned SMILES, with `{ "smiles": "..." }` body;
 - `GET /api/v1/references/:id` — metadata and the normalised curve for an
   overlay.
 

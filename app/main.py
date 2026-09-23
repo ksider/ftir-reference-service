@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 
 from .catalog import ReferenceCatalog
 from .installer import LocalSourceIndexer, ZenodoInstaller
+from .pubchem import PubChemResolver
 from .settings import Settings, load_settings
 from .state import ServiceState
 
@@ -30,6 +31,10 @@ class SearchRequest(BaseModel):
     points: list[list[float]] = Field(min_length=8, description="[[wavenumber cm-1, intensity], ...]")
     signalType: Literal["absorbance", "transmittance"] = "absorbance"
     topK: int = Field(default=5, ge=1, le=20)
+
+
+class MetadataResolveRequest(BaseModel):
+    smiles: str = Field(min_length=1, max_length=2048, description="SMILES returned by a reference match")
 
 
 def _token_from_authorization(value: str | None) -> str:
@@ -50,6 +55,7 @@ def create_app() -> FastAPI:
     settings = load_settings()
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     state = ServiceState(settings.data_dir)
+    pubchem = PubChemResolver(settings.data_dir, settings.pubchem_timeout_seconds)
     catalog: ReferenceCatalog | None = None
     catalog_lock = threading.RLock()
 
@@ -196,6 +202,17 @@ def create_app() -> FastAPI:
                   if (state.snapshot().get("dataset") or {}).get("sourceMode") == "local-partial" else []),
             ],
         }
+
+    @app.post("/api/v1/metadata/resolve", dependencies=[Depends(require_service)])
+    def resolve_metadata(payload: MetadataResolveRequest) -> dict[str, object]:
+        """Resolve a candidate's display name through cached PubChem metadata."""
+        try:
+            metadata = pubchem.resolve(payload.smiles)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
+        return {"metadata": metadata}
 
     @app.get("/api/v1/references/{reference_id}", dependencies=[Depends(require_service)])
     def reference(reference_id: str) -> dict[str, object]:

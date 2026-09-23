@@ -16,6 +16,7 @@ class Settings:
     service_token: str
     zenodo_record_id: str
     vector_points: int
+    pubchem_timeout_seconds: float
 
     @property
     def index_dir(self) -> Path:
@@ -29,6 +30,9 @@ def load_settings() -> Settings:
     vector_points = int(os.getenv("REFERENCE_VECTOR_POINTS", "512"))
     if vector_points < 64 or vector_points > 4096:
         raise ValueError("REFERENCE_VECTOR_POINTS must be between 64 and 4096")
+    pubchem_timeout_seconds = float(os.getenv("PUBCHEM_TIMEOUT_SECONDS", "12"))
+    if pubchem_timeout_seconds <= 0 or pubchem_timeout_seconds > 60:
+        raise ValueError("PUBCHEM_TIMEOUT_SECONDS must be between 0 and 60")
     data_dir = Path(os.getenv("REFERENCE_DATA_DIR", "/data")).resolve()
     configured_source = os.getenv("REFERENCE_SOURCE_DIR", "").strip()
     cors_allow_origins = tuple(
@@ -42,4 +46,5 @@ def load_settings() -> Settings:
         service_token=os.getenv("SERVICE_TOKEN", "").strip(),
         zenodo_record_id=os.getenv("ZENODO_RECORD_ID", "16417648").strip(),
         vector_points=vector_points,
+        pubchem_timeout_seconds=pubchem_timeout_seconds,
     )
