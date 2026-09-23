@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FTIR reference service</title>
+    <style>
+      :root { color-scheme: light dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+      body { max-width: 880px; margin: 40px auto; padding: 0 20px; background: Canvas; color: CanvasText; }
+      section { border: 1px solid color-mix(in srgb, CanvasText 20%, transparent); border-radius: 12px; padding: 20px; margin: 16px 0; }
+      label, input, button { font: inherit; } input { width: min(100%, 520px); padding: 9px; margin: 6px 0 12px; }
+      button { padding: 10px 14px; font-weight: 650; cursor: pointer; } pre { overflow: auto; white-space: pre-wrap; }
+      .warning { color: #b54708; } .ready { color: #067647; } .muted { color: GrayText; }
+    </style>
+  </head>
+  <body>
+    <h1>FTIR reference spectra service</h1>
+    <p class="muted">Administration stays on this host. Do not put its token into the static FTIR frontend.</p>
+    <section>
+      <h2>Admin access</h2>
+      <label for="token">Admin token</label><br />
+      <input id="token" type="password" autocomplete="off" placeholder="ADMIN_TOKEN from .env" />
+      <button id="refresh">Refresh status</button>
+    </section>
+    <section>
+      <h2>Dataset installation</h2>
+      <p>This installs the 9 IR Parquet files from Zenodo record 16417648 (about 8.1 GB) and builds a local search index. Reserve at least 20 GB of free disk space. These are <strong>computed</strong> spectra, not experimental identification.</p>
+      <p class="warning">By starting the installation you confirm that you accept CDLA-Permissive-2.0 for the downloaded dataset.</p>
+      <button id="install">Download and build index</button>
+      <p class="muted">For local development, put one or more IR Parquet chunks in <code>.source/</code>, set <code>REFERENCE_SOURCE_DIR=./.source</code> in <code>.env</code>, then use:</p>
+      <button id="index-local">Build index from local .source</button>
+    </section>
+    <section>
+      <h2>Service state</h2>
+      <pre id="status">Enter the admin token, then refresh.</pre>
+    </section>
+    <section>
+      <h2>Recent logs</h2>
+      <pre id="logs">—</pre>
+    </section>
+    <script>
+      const token = document.querySelector('#token');
+      const statusBox = document.querySelector('#status');
+      const logsBox = document.querySelector('#logs');
+      const headers = () => ({ Authorization: `Bearer ${token.value}` });
+      async function api(path, options = {}) {
+        const response = await fetch(path, { ...options, headers: { ...headers(), ...(options.headers || {}) } });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(body.detail || `${response.status} ${response.statusText}`);
+        return body;
+      }
+      async function refresh() {
+        try {
+          const [state, logData] = await Promise.all([api('/api/admin/status'), api('/api/admin/logs?tail=80')]);
+          statusBox.textContent = JSON.stringify(state, null, 2);
+          logsBox.textContent = logData.logs.map(item => `[${item.at}] ${item.level} ${item.message}`).join('\n') || 'No logs yet.';
+        } catch (error) { statusBox.textContent = `Error: ${error.message}`; }
+      }
+      document.querySelector('#refresh').addEventListener('click', refresh);
+      document.querySelector('#install').addEventListener('click', async () => {
+        if (!confirm('Start the 8.1 GB download and local index build?')) return;
+        try { await api('/api/admin/setup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ acceptLicense: true }) }); await refresh(); }
+        catch (error) { statusBox.textContent = `Error: ${error.message}`; }
+      });
+      document.querySelector('#index-local').addEventListener('click', async () => {
+        try { await api('/api/admin/index-local', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ acceptLicense: true }) }); await refresh(); }
+        catch (error) { statusBox.textContent = `Error: ${error.message}`; }
+      });
+      setInterval(() => { if (token.value) refresh(); }, 8000);
+    </script>
+  </body>
+</html>

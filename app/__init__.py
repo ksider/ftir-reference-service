@@ -1,0 +1,1 @@
+"""FTIR reference spectra service."""
