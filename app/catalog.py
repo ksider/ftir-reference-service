@@ -10,6 +10,7 @@ import pyarrow.parquet as pq
 
 
 CATALOG_VERSION = "zenodo-ir-v1"
+SEARCH_ALGORITHM_VERSION = "global-cosine-v1"
 X_MIN_CM1 = 500.0
 X_MAX_CM1 = 4000.0
 
@@ -68,7 +69,9 @@ def build_catalog(
         "CREATE TABLE references_catalog (row_index INTEGER PRIMARY KEY, reference_id TEXT, smiles TEXT, source_file TEXT)"
     )
     connection.execute("CREATE INDEX idx_reference_id ON references_catalog(reference_id)")
+    connection.execute("CREATE INDEX idx_reference_smiles ON references_catalog(smiles)")
     row_index = 0
+    next_progress_at = 2048
     try:
         for source_file in parquet_files:
             log(f"Indexing {source_file.name}")
@@ -92,9 +95,11 @@ def build_catalog(
                         (row_index, str(item.get("id", "")), str(item.get("smiles", "")), source_file.name),
                     )
                     row_index += 1
-                if row_index % 2048 == 0:
+                if row_index >= next_progress_at:
                     connection.commit()
                     log(f"Indexed {row_index:,} / {total_rows:,} spectra")
+                    next_progress_at = ((row_index // 2048) + 1) * 2048
+            log(f"Finished {source_file.name}: {row_index:,} / {total_rows:,} spectra")
         connection.commit()
         vectors.flush()
     finally:
@@ -110,6 +115,7 @@ def build_catalog(
     np.save(index_dir / "x-axis.npy", grid)
     manifest = {
         "catalogVersion": CATALOG_VERSION,
+        "searchAlgorithmVersion": SEARCH_ALGORITHM_VERSION,
         "referenceType": "computed",
         "rows": total_rows,
         "vectorPoints": vector_points,
@@ -186,5 +192,29 @@ class ReferenceCatalog:
                 "source": "Zenodo 10.5281/zenodo.16417648",
                 "license": "CDLA-Permissive-2.0",
             }
+        finally:
+            connection.close()
+
+    def lookup(self, query: str, limit: int = 100) -> list[dict[str, object]]:
+        """Find exact IDs or SMILES without exposing the full catalogue."""
+        value = query.strip()
+        if not value:
+            return []
+        connection = sqlite3.connect(self.database_path)
+        try:
+            rows = connection.execute(
+                """
+                SELECT reference_id, smiles, source_file
+                FROM references_catalog
+                WHERE reference_id = ? OR smiles = ?
+                ORDER BY reference_id
+                LIMIT ?
+                """,
+                (value, value, min(max(limit, 1), 100)),
+            ).fetchall()
+            return [
+                {"id": row[0], "smiles": row[1], "sourceFile": row[2]}
+                for row in rows
+            ]
         finally:
             connection.close()

@@ -135,9 +135,21 @@ Authorization: Bearer <ADMIN_TOKEN>
 Routes:
 
 - `GET /api/admin/status`
+- `GET /api/admin/diagnostics` — runtime, catalogue and storage summary
+- `GET /api/admin/files` — Zenodo chunk inventory (`missing | partial | present`)
 - `GET /api/admin/logs?tail=200`
 - `GET /api/admin/jobs/:id`
-- `POST /api/admin/setup` with `{ "acceptLicense": true }`
+- `GET /api/admin/catalog/search?query=<exact SMILES or ID>`
+- `GET /api/admin/catalog/:id` — a normalised reference curve for the admin plot
+- `POST /api/admin/setup` with `{ "acceptLicense": true, "files": ["..."] }`
+- `POST /api/admin/rebuild-index` with optional selected present files
+
+The Admin page keeps logs in a fixed-height scrollable console. It shows disk
+usage, source/index size, file state and an exact SMILES/ID catalogue inspector
+with a normalised-spectrum plot. Selecting files in **Download selected** only
+controls the download; the following index build includes every Parquet file
+already present in the persistent volume. **Rebuild index** never downloads
+anything and replaces the active index only after a successful build.
 
 For a public deployment, place the domain behind Cloudflare Access as an
 additional gate. The application token remains required, so Cloudflare Access

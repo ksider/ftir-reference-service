@@ -17,34 +17,109 @@ IR_FILE_PATTERN = re.compile(r"^IR_data_chunk\d{3}_of_009\.parquet$")
 ZENODO_API = "https://zenodo.org/api/records/{record_id}"
 
 
+def local_ir_files(settings: Settings) -> list[Path]:
+    return sorted(path for path in settings.source_dir.glob("*.parquet") if IR_FILE_PATTERN.match(path.name))
+
+
+def load_zenodo_record(settings: Settings) -> dict[str, object]:
+    saved_manifest = settings.source_dir / "zenodo-manifest.json"
+    if saved_manifest.exists():
+        try:
+            record = json.loads(saved_manifest.read_text(encoding="utf-8"))
+            if isinstance(record, dict):
+                return record
+        except (OSError, json.JSONDecodeError):
+            pass
+    response = requests.get(ZENODO_API.format(record_id=settings.zenodo_record_id), timeout=(10, 60))
+    response.raise_for_status()
+    return response.json()
+
+
+def zenodo_ir_files(record: dict[str, object]) -> list[dict[str, object]]:
+    files = [item for item in record.get("files", []) if IR_FILE_PATTERN.match(str(item.get("key", "")))]
+    if len(files) != 9:
+        raise RuntimeError(f"Expected 9 IR Parquet files, received {len(files)} from Zenodo")
+    return sorted(files, key=lambda item: str(item["key"]))
+
+
+def select_zenodo_files(files: list[dict[str, object]], selected_names: list[str] | None) -> list[dict[str, object]]:
+    if not selected_names:
+        return files
+    available = {str(item["key"]): item for item in files}
+    requested = list(dict.fromkeys(str(name) for name in selected_names))
+    invalid = [name for name in requested if name not in available]
+    if invalid:
+        raise ValueError(f"Unknown Zenodo file selection: {', '.join(invalid[:3])}")
+    return [available[name] for name in requested]
+
+
+def zenodo_file_inventory(settings: Settings) -> dict[str, object]:
+    """Report file presence without re-hashing multi-GB files on each refresh."""
+    record = load_zenodo_record(settings)
+    files = zenodo_ir_files(record)
+    result = []
+    for item in files:
+        filename = str(item["key"])
+        destination = settings.source_dir / filename
+        partial = destination.with_suffix(destination.suffix + ".part")
+        expected_bytes = int(item.get("size") or 0)
+        if destination.exists():
+            local_bytes = destination.stat().st_size
+            state = "present" if not expected_bytes or local_bytes == expected_bytes else "size_mismatch"
+        elif partial.exists():
+            local_bytes = partial.stat().st_size
+            state = "partial"
+        else:
+            local_bytes = 0
+            state = "missing"
+        result.append({
+            "name": filename,
+            "sizeBytes": expected_bytes,
+            "localBytes": local_bytes,
+            "state": state,
+            "checksum": str(item.get("checksum") or ""),
+        })
+    return {
+        "recordId": settings.zenodo_record_id,
+        "doi": record.get("doi") or "10.5281/zenodo.16417648",
+        "license": (record.get("metadata") or {}).get("license", {}).get("id") or "CDLA-Permissive-2.0",
+        "files": result,
+    }
+
+
 class ZenodoInstaller:
     def __init__(self, settings: Settings, state: ServiceState):
         self.settings = settings
         self.state = state
 
-    def install(self, job_id: str) -> None:
+    def install(
+        self,
+        job_id: str,
+        selected_names: list[str] | None = None,
+        on_catalog_ready: Callable[[], None] | None = None,
+    ) -> None:
         def log(message: str, level: str = "INFO") -> None:
             self.state.log(job_id, message, level)
 
         try:
             log(f"Loading Zenodo record {self.settings.zenodo_record_id}")
-            response = requests.get(ZENODO_API.format(record_id=self.settings.zenodo_record_id), timeout=(10, 60))
-            response.raise_for_status()
-            record = response.json()
-            files = [item for item in record.get("files", []) if IR_FILE_PATTERN.match(item.get("key", ""))]
-            if len(files) != 9:
-                raise RuntimeError(f"Expected 9 IR Parquet files, received {len(files)} from Zenodo")
-            files.sort(key=lambda item: item["key"])
+            record = load_zenodo_record(self.settings)
+            files = zenodo_ir_files(record)
+            selected_files = select_zenodo_files(files, selected_names)
             self.settings.source_dir.mkdir(parents=True, exist_ok=True)
             (self.settings.source_dir / "zenodo-manifest.json").write_text(json.dumps(record, indent=2), encoding="utf-8")
 
-            for item in files:
+            log(f"Selected {len(selected_files)} of {len(files)} Zenodo IR file(s)")
+            for item in selected_files:
                 self._download_file(item, log)
 
+            index_files = local_ir_files(self.settings)
+            if not index_files:
+                raise RuntimeError("No downloaded IR Parquet files are available to index")
             self.state.set_status("indexing")
-            log("All Parquet files verified. Building local vector index.")
+            log(f"Selected downloads complete. Building vector index from {len(index_files)} present IR file(s).")
             manifest = build_catalog(
-                [self.settings.source_dir / item["key"] for item in files],
+                index_files,
                 self.settings.index_dir,
                 self.settings.vector_points,
                 log,
@@ -54,9 +129,12 @@ class ZenodoInstaller:
                 "doi": "10.5281/zenodo.16417648",
                 "referenceType": "computed",
                 "license": "CDLA-Permissive-2.0",
-                "files": [item["key"] for item in files],
+                "files": [path.name for path in index_files],
+                "fullDataset": len(index_files) == len(files),
                 "catalog": manifest,
             }
+            if on_catalog_ready:
+                on_catalog_ready()
             log("Installation complete. Reference search is ready.")
             self.state.finish_job(job_id, dataset=dataset)
         except Exception as error:  # The exact message is retained for the Admin UI and logs.
@@ -120,12 +198,20 @@ class LocalSourceIndexer:
         self.settings = settings
         self.state = state
 
-    def install(self, job_id: str) -> None:
+    def install(
+        self,
+        job_id: str,
+        selected_names: list[str] | None = None,
+        on_catalog_ready: Callable[[], None] | None = None,
+    ) -> None:
         def log(message: str, level: str = "INFO") -> None:
             self.state.log(job_id, message, level)
 
         try:
-            files = sorted(path for path in self.settings.source_dir.glob("*.parquet") if IR_FILE_PATTERN.match(path.name))
+            files = local_ir_files(self.settings)
+            if selected_names:
+                selected = set(selected_names)
+                files = [path for path in files if path.name in selected]
             if not files:
                 raise RuntimeError(
                     f"No IR_data_chunkXXX_of_009.parquet files found in {self.settings.source_dir}"
@@ -143,6 +229,8 @@ class LocalSourceIndexer:
                 "files": [path.name for path in files],
                 "catalog": manifest,
             }
+            if on_catalog_ready:
+                on_catalog_ready()
             log("Local catalogue is ready. Search results cover only the supplied chunk(s).")
             self.state.finish_job(job_id, dataset=dataset)
         except Exception as error:
