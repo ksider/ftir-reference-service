@@ -69,6 +69,21 @@ they are: Docker Compose deliberately replaces them with `/data` and
 `ZENODO_RECORD_ID=16417648` unchanged unless the catalogue implementation is
 explicitly updated for another record.
 
+### Portainer deployment
+
+Portainer does not copy an ignored `.env` file from a Git repository. In the
+Stack editor, add these two Environment variables before deploying:
+
+```text
+ADMIN_TOKEN=<long random admin token>
+SERVICE_TOKEN=<different long random service token>
+```
+
+The Compose file reads them directly from the Stack environment. Do not add an
+`env_file: .env` entry in Portainer. Optional variables are
+`REFERENCE_PORT`, `ZENODO_RECORD_ID`, `REFERENCE_VECTOR_POINTS`,
+`PUBCHEM_TIMEOUT_SECONDS` and `LOG_LEVEL`; their defaults are already safe.
+
 ## Local development without Docker
 
 For a fast development check, do not download all 8.1 GB. Place one or more

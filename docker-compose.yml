@@ -1,8 +1,15 @@
 services:
   reference-service:
     build: .
-    env_file: .env
     environment:
+      # Local Docker Compose reads these from .env. In Portainer, define the
+      # same variables in the Stack's Environment variables form instead.
+      ADMIN_TOKEN: ${ADMIN_TOKEN:?Set ADMIN_TOKEN in .env or Portainer Stack environment variables}
+      SERVICE_TOKEN: ${SERVICE_TOKEN:?Set SERVICE_TOKEN in .env or Portainer Stack environment variables}
+      ZENODO_RECORD_ID: ${ZENODO_RECORD_ID:-16417648}
+      REFERENCE_VECTOR_POINTS: ${REFERENCE_VECTOR_POINTS:-512}
+      PUBCHEM_TIMEOUT_SECONDS: ${PUBCHEM_TIMEOUT_SECONDS:-12}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
       # Keep Docker data in its named volume even when .env is configured for
       # convenient local Python development.
       REFERENCE_DATA_DIR: /data
