@@ -11,7 +11,9 @@ services:
     ports:
       - "${REFERENCE_PORT:-8088}:8080"
     volumes:
-      - reference-data:${REFERENCE_DATA_DIR:-/data}
+      # Always mount the named Docker volume at the same path used by the
+      # container environment above. Local .env paths are for uvicorn only.
+      - reference-data:/data
     restart: unless-stopped
 
 volumes:

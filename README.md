@@ -61,6 +61,14 @@ Reserve at least **20 GB** of free disk space for source files, the index and
 temporary build files. The Docker volume `reference-data` holds the data and
 survives a container rebuild.
 
+For Docker deployment, change only `ADMIN_TOKEN` and `SERVICE_TOKEN` in
+`.env`; optionally set `REFERENCE_PORT` and `PUBCHEM_TIMEOUT_SECONDS`.
+Leave `REFERENCE_DATA_DIR=./data` and `REFERENCE_SOURCE_DIR=./.source` as
+they are: Docker Compose deliberately replaces them with `/data` and
+`/data/source` inside its persistent volume. Keep
+`ZENODO_RECORD_ID=16417648` unchanged unless the catalogue implementation is
+explicitly updated for another record.
+
 ## Local development without Docker
 
 For a fast development check, do not download all 8.1 GB. Place one or more
