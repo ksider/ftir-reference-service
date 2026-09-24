@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hmac
+import hashlib
+import json
 import logging
 import threading
 from contextlib import asynccontextmanager
@@ -35,6 +37,21 @@ class SearchRequest(BaseModel):
 
 class MetadataResolveRequest(BaseModel):
     smiles: str = Field(min_length=1, max_length=2048, description="SMILES returned by a reference match")
+
+
+def _query_diagnostics(points: list[list[float]]) -> dict[str, object]:
+    """Small, non-reversible trace for distinguishing browser queries in logs."""
+    fingerprint = hashlib.sha256(
+        json.dumps(points, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+    ).hexdigest()[:16]
+    x_values = [point[0] for point in points]
+    y_values = [point[1] for point in points]
+    return {
+        "fingerprint": fingerprint,
+        "pointCount": len(points),
+        "xRangeCm1": [min(x_values), max(x_values)],
+        "yRange": [min(y_values), max(y_values)],
+    }
 
 
 def _token_from_authorization(value: str | None) -> str:
@@ -94,10 +111,11 @@ def create_app() -> FastAPI:
         redoc_url=None,
         lifespan=lifespan,
     )
-    if settings.cors_allow_origins:
+    if settings.cors_allow_origins or settings.cors_allow_origin_regex:
         app.add_middleware(
             CORSMiddleware,
             allow_origins=list(settings.cors_allow_origins),
+            allow_origin_regex=settings.cors_allow_origin_regex,
             allow_credentials=False,
             allow_methods=["GET", "POST", "OPTIONS"],
             allow_headers=["Content-Type", "X-Service-Token"],
@@ -186,14 +204,22 @@ def create_app() -> FastAPI:
     @app.post("/api/v1/search", dependencies=[Depends(require_service)])
     def search(payload: SearchRequest) -> dict[str, object]:
         current_catalog = get_catalog()
+        diagnostics = _query_diagnostics(payload.points)
         try:
             matches = current_catalog.search(payload.points, payload.signalType, payload.topK)
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
+        logger.info(
+            "search query=%s points=%s signal=%s top=%s",
+            diagnostics["fingerprint"],
+            diagnostics["pointCount"],
+            payload.signalType,
+            [(item["id"], item["score"]) for item in matches[:3]],
+        )
         return {
             "referenceType": "computed",
             "catalogVersion": current_catalog.manifest["catalogVersion"],
-            "query": {"signalType": payload.signalType, "topK": payload.topK},
+            "query": {"signalType": payload.signalType, "topK": payload.topK, **diagnostics},
             "matches": matches,
             "limitations": [
                 "Matches are hypotheses against computed reference spectra, not experimental identification.",

@@ -61,8 +61,9 @@ Reserve at least **20 GB** of free disk space for source files, the index and
 temporary build files. The Docker volume `reference-data` holds the data and
 survives a container rebuild.
 
-For Docker deployment, change only `ADMIN_TOKEN` and `SERVICE_TOKEN` in
-`.env`; optionally set `REFERENCE_PORT` and `PUBCHEM_TIMEOUT_SECONDS`.
+For Docker deployment, change `ADMIN_TOKEN`, `SERVICE_TOKEN` and
+`CORS_ALLOW_ORIGINS` in `.env`; optionally set `REFERENCE_PORT` and
+`PUBCHEM_TIMEOUT_SECONDS`.
 Leave `REFERENCE_DATA_DIR=./data` and `REFERENCE_SOURCE_DIR=./.source` as
 they are: Docker Compose deliberately replaces them with `/data` and
 `/data/source` inside its persistent volume. Keep
@@ -77,6 +78,9 @@ Stack editor, add these two Environment variables before deploying:
 ```text
 ADMIN_TOKEN=<long random admin token>
 SERVICE_TOKEN=<different long random service token>
+CORS_ALLOW_ORIGINS=https://vibe.nikolaisemenov.com,null
+# Optional: permits localhost on any port during development.
+CORS_ALLOW_ORIGIN_REGEX=^https?://(localhost|127\.0\.0\.1)(:[0-9]+)?$
 ```
 
 The Compose file reads them directly from the Stack environment. Do not add an
@@ -106,9 +110,11 @@ only the downloaded chunk(s). Every response explicitly reports this
 limitation.
 
 `CORS_ALLOW_ORIGINS` is a comma-separated allow-list for direct browser calls.
-For a `file://` local page include `null`; for production set the exact static
-site origin, for example `https://vibe.nikolaisemenov.com`. The API uses
-`X-Service-Token`, so the browser request intentionally omits cookies.
+For a `file://` local page include `null`; for production add each exact static
+site origin, for example `https://vibe.nikolaisemenov.com`. An optional
+`CORS_ALLOW_ORIGIN_REGEX` supports a controlled group of origins, such as
+localhost on any port. The API uses `X-Service-Token`, so the browser request
+intentionally omits cookies.
 
 ## Status and administration
 

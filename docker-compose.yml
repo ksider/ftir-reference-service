@@ -17,6 +17,8 @@ services:
       # Comma-separated static app origins permitted to call the public API.
       # Example: https://vibe.nikolaisemenov.com
       CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-}
+      # Optional regular expression, useful for localhost on any development port.
+      CORS_ALLOW_ORIGIN_REGEX: ${CORS_ALLOW_ORIGIN_REGEX:-}
     ports:
       - "${REFERENCE_PORT:-8088}:8080"
     volumes:

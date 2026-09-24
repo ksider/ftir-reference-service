@@ -12,6 +12,7 @@ class Settings:
     data_dir: Path
     source_dir: Path
     cors_allow_origins: tuple[str, ...]
+    cors_allow_origin_regex: str | None
     admin_token: str
     service_token: str
     zenodo_record_id: str
@@ -38,10 +39,12 @@ def load_settings() -> Settings:
     cors_allow_origins = tuple(
         origin.strip() for origin in os.getenv("CORS_ALLOW_ORIGINS", "").split(",") if origin.strip()
     )
+    cors_allow_origin_regex = os.getenv("CORS_ALLOW_ORIGIN_REGEX", "").strip() or None
     return Settings(
         data_dir=data_dir,
         source_dir=Path(configured_source).expanduser().resolve() if configured_source else data_dir / "source",
         cors_allow_origins=cors_allow_origins,
+        cors_allow_origin_regex=cors_allow_origin_regex,
         admin_token=os.getenv("ADMIN_TOKEN", "").strip(),
         service_token=os.getenv("SERVICE_TOKEN", "").strip(),
         zenodo_record_id=os.getenv("ZENODO_RECORD_ID", "16417648").strip(),
