@@ -105,10 +105,10 @@ from local .source**. The resulting API is fully usable, but its matches cover
 only the downloaded chunk(s). Every response explicitly reports this
 limitation.
 
-`CORS_ALLOW_ORIGINS` in `.env.example` permits only local browser origins and
-the `file://` origin (`null`) for this diagnostic route. Docker Compose clears
-it deliberately: the deployed static frontend must use the main FTIR server as
-a proxy instead of sending `SERVICE_TOKEN` from the browser.
+`CORS_ALLOW_ORIGINS` is a comma-separated allow-list for direct browser calls.
+For a `file://` local page include `null`; for production set the exact static
+site origin, for example `https://vibe.nikolaisemenov.com`. The API uses
+`X-Service-Token`, so the browser request intentionally omits cookies.
 
 ## Status and administration
 

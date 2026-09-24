@@ -14,7 +14,9 @@ services:
       # convenient local Python development.
       REFERENCE_DATA_DIR: /data
       REFERENCE_SOURCE_DIR: /data/source
-      CORS_ALLOW_ORIGINS: ""
+      # Comma-separated static app origins permitted to call the public API.
+      # Example: https://vibe.nikolaisemenov.com
+      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-}
     ports:
       - "${REFERENCE_PORT:-8088}:8080"
     volumes:
